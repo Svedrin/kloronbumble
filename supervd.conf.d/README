@@ -1,0 +1,2 @@
+This directory will be used to store conf files for supervisord. Make sure
+it is writable for the web server.

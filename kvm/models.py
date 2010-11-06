@@ -1,0 +1,185 @@
+# -*- coding: utf-8 -*-
+# kate: space-indent on; indent-width 4; replace-tabs on;
+
+from os.path import dirname, abspath, join
+from django.db import models
+from supervisord.models import Supervisor, Process
+
+class Bridge(models.Model):
+    name        = models.CharField(max_length=10,  unique=True)
+    commonname  = models.CharField(max_length=250, blank=True)
+    ip4address  = models.CharField(max_length=15,  blank=True, unique=True)
+    ip6address  = models.CharField(max_length=39,  blank=True, unique=True)
+    netmask     = models.CharField(max_length=15,  blank=True)
+    needifaces  = models.CharField(max_length=250, blank=True, help_text="Fail if one of the listed interfaces is not in the bridge. Checked after addifaces are applied.")
+    failifaces  = models.CharField(max_length=250, blank=True, help_text="Fail if one of the listed interfaces *is* in the bridge.")
+    addifaces   = models.CharField(max_length=250, blank=True, help_text="After starting the bridge, add the listed interfaces to it.")
+    dnsmasq     = models.CharField(max_length=10,  default="off", choices=(
+                      ("off",  "No DNSMASQ Daemon running"),
+                      ("dns",  "Provide DNS only (no DHCP)"),
+                      ("dhcp", "Provide DNS and DHCP")
+                      ))
+    process     = models.ForeignKey(Process,       blank=True, null=True)
+
+    def __unicode__(self):
+        return "%s (%s)" % ( self.commonname, self.name)
+
+    def save(self, *args, **kwargs):
+        if self.process is None:
+            svd = Supervisor.objects.all()[0]
+            self.process = Process(supervisor=svd, name=self.name)
+
+        kvmdir = dirname(abspath(__file__))
+        self.process.command                 = "%s -n %s -v" % ( join(kvmdir, "bridgemon.py"), self.name )
+        self.process.directory               = "/guests"
+        self.process.autostart               = "false"
+        self.process.redirect_stderr         = "true"
+        self.process.stdout_logfile          = join( "/guests", ("bridge_%s.log" % self.name) )
+        self.process.stdout_logfile_maxbytes = "50MB"
+        self.process.stdout_logfile_backups  = "10"
+        self.process.save()
+
+        return models.Model.save(self, *args, **kwargs)
+
+    def start(self):
+        return self.process.start()
+
+    def stop(self):
+        if not self.idle:
+            raise SystemError("Cannot stop bridge, there are VMs using it.")
+        return self.process.stop()
+
+    @property
+    def idle(self):
+        return not max(( vm.process.is_running for vm in self.virtualmachine_set.all()))
+
+
+class VirtualMachine(models.Model):
+    name        = models.CharField(max_length=50,  unique=True)
+    process     = models.ForeignKey(Process,       blank=True, null=True, unique=True)
+    description = models.TextField(blank=True)
+    macaddress  = models.CharField(max_length=17,  blank=True, unique=True)
+    ip4address  = models.CharField(max_length=15,  blank=True)
+    ip6address  = models.CharField(max_length=39,  blank=True)
+    bridge      = models.ForeignKey(Bridge,        blank=True, null=True)
+    uuid        = models.CharField(max_length=50,  blank=True)
+    cpus        = models.IntegerField(default=2)
+    memory      = models.IntegerField(default=512)
+    diskpath    = models.CharField(max_length=250, blank=True)
+    diskformat  = models.CharField(max_length=20,  default="qcow2")
+    disksize    = models.CharField(max_length=10,  default="10G", help_text="only used when creating the image")
+    cdrompath   = models.CharField(max_length=250, blank=True)
+    vncport     = models.IntegerField(default=0,   unique=True)
+    keymap      = models.CharField(max_length=10,  default="de")
+    runsnapshot = models.BooleanField(default=False, blank=True)
+    emumachine  = models.CharField(max_length=50,  blank=True, default="pc-0.12")
+    paravirt    = models.BooleanField(default=True, blank=True)
+
+    def __unicode__(self):
+        return self.name
+
+    def get_kvm_args(self):
+        """ Return KVM arguments to start this VM. """
+        args = ["-enable-kvm", "-monitor", "stdio", "-rtc", "base=utc", "-nodefaults", "-vga", "cirrus"]
+
+        if self.emumachine:
+            args.extend(["-M", self.emumachine])
+
+        args.extend(["-name", self.name.encode("utf-8")])
+        args.extend(["-uuid", self.uuid.encode("utf-8")])
+        args.extend(["-smp", str(self.cpus)])
+        args.extend(["-m", str(self.memory)])
+
+        if self.cdrompath:
+            args.extend(["-boot", "order=dc,once=d"])
+            args.extend(["-cdrom", self.cdrompath.encode("utf-8")])
+        else:
+            args.extend(["-boot", "order=c"])
+
+        if self.diskpath:
+            diskpath = self.diskpath.encode("utf-8")
+        else:
+            diskpath = "/guests/%s/hda.%s" % (self.name.encode("utf-8"), self.diskformat.encode("utf-8"))
+
+        if self.paravirt:
+            args.extend(["-drive", "file=%s,if=virtio,id=drive-disk0,boot=on,format=%s" % (diskpath, self.diskformat)])
+        else:
+            args.extend(["-drive", "file=%s,if=none,id=drive-disk0,boot=on,format=%s" % (diskpath, self.diskformat)])
+            args.extend(["-device", "ide-drive,bus=ide.0,unit=0,drive=drive-disk0,id=ide0-0-0"])
+
+        kvmdir = dirname(abspath(__file__))
+
+        args.extend(["-net", "nic,vlan=0,macaddr=%s" % self.macaddress.encode("utf-8")])
+        args.extend(["-net", "tap,vlan=0,script=%s" % join(kvmdir, "netconf.py")])
+
+        if self.vncport is not None:
+            args.extend(["-usbdevice", "tablet"])
+            args.extend(["-vnc", "127.0.0.1:%d" % self.vncport])
+            args.extend(["-k", self.keymap.encode("utf-8")])
+
+        if self.runsnapshot:
+            args.extend(["-snapshot"])
+
+        return args
+
+    def save(self, *args, **kwargs):
+        if self.process is None:
+            svd = Supervisor.objects.all()[0]
+            self.process = Process(supervisor=svd, name=self.name)
+
+        kvmdir = dirname(abspath(__file__))
+        self.process.command                 = "%s -n %s -v" % ( join(kvmdir, "monitord.py"), self.name )
+        self.process.directory               = join( "/guests", self.name )
+        self.process.autostart               = "false"
+        self.process.redirect_stderr         = "true"
+        self.process.stdout_logfile          = join( "/guests", self.name, "stdout.log" )
+        self.process.stdout_logfile_maxbytes = "50MB"
+        self.process.stdout_logfile_backups  = "10"
+        self.process.save()
+
+        return models.Model.save(self, *args, **kwargs)
+
+    def start(self):
+        if self.bridge is not None and not self.bridge.process.is_running:
+            self.bridge.start()
+            if not self.bridge.process.waitState("RUNNING"):
+                raise SystemError("Failed to bring up bridge '%s' for VM '%s'" % (self.bridge.name, self.name))
+        return self.process.start()
+
+    def stop(self):
+        return self.process.stop()
+
+    def shutdown(self):
+        if not self.process.is_running:
+            return self.process.sendStdin("system_powerdown\r\n")
+        return None
+
+    def commit(self):
+        if not self.runsnapshot:
+            raise SystemError("Cannot commit when not running in snapshot mode")
+        return self.process.sendStdin("commit drive-disk0\r\n")
+
+
+class Snapshot(models.Model):
+    vm          = models.ForeignKey(VirtualMachine)
+    tag         = models.CharField(max_length=250)
+
+    class Meta:
+        unique_together = ("vm", "tag")
+
+    def __unicode__(self):
+        return "%s: %s" % ( self.vm.name, self.tag)
+
+    def save(self, *args, **kwargs):
+        if self.id is not None:
+            return
+
+        if self.vm.process.sendStdin("savevm %s\r\n" % self.tag.encode("utf-8")):
+            return models.Model.save(self, *args, **kwargs)
+        else:
+            raise SystemError("Could not dispatch savevm command")
+
+    def load(self):
+        if not self.id:
+            raise SystemError("Cannot load a snapshot that has not yet been created")
+        return self.vm.process.sendStdin("loadvm %s\r\n" % self.tag.encode("utf-8"))
