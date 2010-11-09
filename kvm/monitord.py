@@ -45,28 +45,43 @@ if bool(options.id) == bool(options.name):
 import subprocess
 from kvm.models import VirtualMachine
 
+def invoke(args):
+    if options.dry_run or options.verbose:
+        print " ".join(args)
+    if not options.dry_run:
+        from signal import signal, SIGTERM, SIG_DFL
+
+        proc = subprocess.Popen(args,
+            stdin  = sys.stdin,
+            stdout = sys.stdout,
+            stderr = sys.stderr
+            )
+
+        def fwdsigterm(signum, frame):
+            proc.send_signal(SIGTERM)
+            signal(SIGTERM, fwdsigterm)
+
+        signal(SIGTERM, fwdsigterm)
+        proc.wait()
+        signal(SIGTERM, SIG_DFL)
+
 if options.id:
     vm = VirtualMachine.objects.get(id=options.id)
 elif options.name:
     vm = VirtualMachine.objects.get(name=options.name)
 
-if options.dry_run:
-    print ' '.join( ["/usr/bin/kvm"] + vm.get_kvm_args() )
-    sys.exit(256)
+wd = join("/guests", vm.name)
+if not exists(wd):
+    os.mkdir(wd)
 
+os.chdir(wd)
 
 if not vm.diskpath or not exists(vm.diskpath):
     # create image
     diskpath = "/guests/%s/hda.%s" % (vm.name.encode("utf-8"), vm.diskformat.encode("utf-8"))
     if options.verbose:
         print "Creating %s image at '%s'..." % ( vm.diskformat, diskpath );
-    proc = subprocess.Popen(
-        ["qemu-img", "create", "-f", vm.diskformat, "-o", "size=10G,preallocation=metadata", diskpath],
-        stdin  = sys.stdin,
-        stdout = sys.stdout,
-        stderr = sys.stderr
-        )
-    proc.wait()
+    invoke(["qemu-img", "create", "-f", vm.diskformat, "-o", "size=10G,preallocation=metadata", diskpath])
 
     if options.verbose:
         print "Done."
@@ -74,14 +89,4 @@ if not vm.diskpath or not exists(vm.diskpath):
     vm.save()
 
 
-if options.verbose:
-    print "Invoking KVM..."
-    print ' '.join( ["/usr/bin/kvm"] + vm.get_kvm_args() )
-
-proc = subprocess.Popen(
-    ["/usr/bin/kvm"] + vm.get_kvm_args(),
-    stdin  = sys.stdin,
-    stdout = sys.stdout,
-    stderr = sys.stderr
-    )
-proc.wait()
+invoke(["/usr/bin/kvm"] + vm.get_kvm_args())

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # kate: space-indent on; indent-width 4; replace-tabs on;
 
+import uuid
 from os.path import dirname, abspath, join
 from django.db import models
 from supervisord.models import Supervisor, Process
@@ -8,8 +9,8 @@ from supervisord.models import Supervisor, Process
 class Bridge(models.Model):
     name        = models.CharField(max_length=10,  unique=True)
     commonname  = models.CharField(max_length=250, blank=True)
-    ip4address  = models.CharField(max_length=15,  blank=True, unique=True)
-    ip6address  = models.CharField(max_length=39,  blank=True, unique=True)
+    ip4address  = models.CharField(max_length=15,  blank=True)
+    ip6address  = models.CharField(max_length=39,  blank=True)
     netmask     = models.CharField(max_length=15,  blank=True)
     needifaces  = models.CharField(max_length=250, blank=True, help_text="Fail if one of the listed interfaces is not in the bridge. Checked after addifaces are applied.")
     failifaces  = models.CharField(max_length=250, blank=True, help_text="Fail if one of the listed interfaces *is* in the bridge.")
@@ -129,13 +130,30 @@ class VirtualMachine(models.Model):
 
         kvmdir = dirname(abspath(__file__))
         self.process.command                 = "%s -n %s -v" % ( join(kvmdir, "monitord.py"), self.name )
-        self.process.directory               = join( "/guests", self.name )
+        self.process.directory               = join( "/guests" )
         self.process.autostart               = "false"
         self.process.redirect_stderr         = "true"
-        self.process.stdout_logfile          = join( "/guests", self.name, "stdout.log" )
+        self.process.stdout_logfile          = join( "/guests", self.name+"_stdout.log" )
         self.process.stdout_logfile_maxbytes = "50MB"
         self.process.stdout_logfile_backups  = "10"
         self.process.save()
+
+        if not self.uuid:
+            uu = uuid.uuid4()
+            self.uuid = str(uu)
+
+        if not self.macaddress:
+            from random import choice
+            def x():
+                return str(choice("0123456789ABCDEF"))
+            while(True):
+                tryaddr = ["52:54:00"]
+                for i in range(3):
+                    tryaddr.append(x() + x())
+                tryaddr = ':'.join(tryaddr)
+                if VirtualMachine.objects.filter(macaddress=tryaddr).count() == 0:
+                    self.macaddress = tryaddr
+                    break
 
         return models.Model.save(self, *args, **kwargs)
 
@@ -150,14 +168,14 @@ class VirtualMachine(models.Model):
         return self.process.stop()
 
     def shutdown(self):
-        if not self.process.is_running:
-            return self.process.sendStdin("system_powerdown\r\n")
+        if self.process.is_running:
+            return self.process.sendStdin("system_powerdown\n")
         return None
 
     def commit(self):
         if not self.runsnapshot:
             raise SystemError("Cannot commit when not running in snapshot mode")
-        return self.process.sendStdin("commit drive-disk0\r\n")
+        return self.process.sendStdin("commit drive-disk0\n")
 
 
 class Snapshot(models.Model):
@@ -174,7 +192,7 @@ class Snapshot(models.Model):
         if self.id is not None:
             return
 
-        if self.vm.process.sendStdin("savevm %s\r\n" % self.tag.encode("utf-8")):
+        if self.vm.process.sendStdin("savevm %s\n" % self.tag.encode("utf-8")):
             return models.Model.save(self, *args, **kwargs)
         else:
             raise SystemError("Could not dispatch savevm command")
@@ -182,4 +200,4 @@ class Snapshot(models.Model):
     def load(self):
         if not self.id:
             raise SystemError("Cannot load a snapshot that has not yet been created")
-        return self.vm.process.sendStdin("loadvm %s\r\n" % self.tag.encode("utf-8"))
+        return self.vm.process.sendStdin("loadvm %s\n" % self.tag.encode("utf-8"))

@@ -62,12 +62,23 @@ def invoke(args):
     if options.dry_run or options.verbose:
         print " ".join(args)
     if not options.dry_run:
+        from signal import signal, SIGTERM, SIGINT, SIG_DFL
+
         proc = subprocess.Popen(args,
             stdin  = sys.stdin,
             stdout = sys.stdout,
             stderr = sys.stderr
             )
+
+        def fwdsigterm(signum, frame):
+            proc.send_signal(SIGTERM)
+            signal(SIGTERM, fwdsigterm)
+
+        signal(SIGTERM, fwdsigterm)
+        signal(SIGINT, fwdsigterm)
         proc.wait()
+        signal(SIGTERM, SIG_DFL)
+        signal(SIGINT, SIG_DFL)
 
 
 if not exists(join( "/sys/class/net", br.name )):
@@ -94,20 +105,35 @@ if br.failifaces:
             sys.exit("Blacklisted interface '%s' is in bridge '%s'" % (iface.strip(), br.name))
 
 
+
 if br.dnsmasq != "off":
     args = ["dnsmasq", "--strict-order", "--bind-interfaces", "--keep-in-foreground",
-            "--conf-file=", "--except-interface", "lo", "--listen-address", br.ip4address]
+            "--conf-file=", "--except-interface", "lo", "--listen-address", br.ip4address,
+            "--interface", br.name.encode("utf-8")]
 
     if br.dnsmasq == "dns":
         args.append("--no-dhcp-interface=%s" % br.name.encode("utf-8"))
+    else:
+        # calc range
+        ipparts = br.ip4address.split('.')
+        lowip   = '.'.join( ipparts[:3] + ['100'] )
+        highip  = '.'.join( ipparts[:3] + ['250'] )
+        args.append("--dhcp-range=interface:%s,%s,%s" % (br.name, lowip, highip))
 
     invoke(args)
 
 elif not options.dry_run:
-    # Wait for SIGINT
+    # Wait for SIGINT or SIGTERM
     try:
+        from signal import signal, SIGTERM
+        def sigtermtoexc(signal, frame):
+            raise KeyboardInterrupt
+
+        signal(SIGTERM, sigtermtoexc)
+
         while(True):
             sleep(999999)
+
     except KeyboardInterrupt:
         pass
 
