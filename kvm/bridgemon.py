@@ -114,11 +114,16 @@ if br.dnsmasq != "off":
     if br.dnsmasq == "dns":
         args.append("--no-dhcp-interface=%s" % br.name.encode("utf-8"))
     else:
-        # calc range
+        if not exists("/var/lib/guests"):
+            os.makedirs("/var/lib/guests")
+
+        kvmdir = dirname(abspath(__file__))
         ipparts = br.ip4address.split('.')
         lowip   = '.'.join( ipparts[:3] + ['100'] )
         highip  = '.'.join( ipparts[:3] + ['250'] )
         args.append("--dhcp-range=interface:%s,%s,%s" % (br.name, lowip, highip))
+        args.append("--dhcp-leasefile=/var/lib/guests/%s.leases" % br.name)
+        args.append("--dhcp-script=" + join(kvmdir, "dhcpmon.py"))
 
     invoke(args)
 
