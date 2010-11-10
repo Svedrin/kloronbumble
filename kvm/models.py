@@ -71,7 +71,7 @@ class VirtualMachine(models.Model):
     uuid        = models.CharField(max_length=50,  blank=True)
     cpus        = models.IntegerField(default=2)
     memory      = models.IntegerField(default=512)
-    diskpath    = models.CharField(max_length=250, blank=True)
+    diskpath    = models.CharField(max_length=250, blank=True, default="hda.qcow2")
     diskformat  = models.CharField(max_length=20,  default="qcow2")
     disksize    = models.CharField(max_length=10,  default="10G", help_text="only used when creating the image")
     cdrompath   = models.CharField(max_length=250, blank=True)
