@@ -28,17 +28,22 @@ class Bridge(models.Model):
     def save(self, *args, **kwargs):
         if self.process is None:
             svd = Supervisor.objects.all()[0]
-            self.process = Process(supervisor=svd, name=self.name)
+            process = Process(supervisor=svd, name=self.name)
+        else:
+            process = self.process
 
         kvmdir = dirname(abspath(__file__))
-        self.process.command                 = "%s -n %s -v" % ( join(kvmdir, "bridgemon.py"), self.name )
-        self.process.directory               = "/guests"
-        self.process.autostart               = "false"
-        self.process.redirect_stderr         = "true"
-        self.process.stdout_logfile          = join( "/guests", ("bridge_%s.log" % self.name) )
-        self.process.stdout_logfile_maxbytes = "50MB"
-        self.process.stdout_logfile_backups  = "10"
-        self.process.save()
+        process.command                 = "%s -n %s -v" % ( join(kvmdir, "bridgemon.py"), self.name )
+        process.directory               = "/guests"
+        process.autostart               = "false"
+        process.redirect_stderr         = "true"
+        process.stdout_logfile          = join( "/var/log/guests", ("bridge_%s.log" % self.name) )
+        process.stdout_logfile_maxbytes = "50MB"
+        process.stdout_logfile_backups  = "10"
+        process.save()
+
+        if self.process is None:
+            self.process = process
 
         return models.Model.save(self, *args, **kwargs)
 
@@ -126,17 +131,22 @@ class VirtualMachine(models.Model):
     def save(self, *args, **kwargs):
         if self.process is None:
             svd = Supervisor.objects.all()[0]
-            self.process = Process(supervisor=svd, name=self.name)
+            process = Process(supervisor=svd, name=self.name)
+        else:
+            process = self.process
 
         kvmdir = dirname(abspath(__file__))
-        self.process.command                 = "%s -n %s -v" % ( join(kvmdir, "monitord.py"), self.name )
-        self.process.directory               = join( "/guests" )
-        self.process.autostart               = "false"
-        self.process.redirect_stderr         = "true"
-        self.process.stdout_logfile          = join( "/guests", self.name+"_stdout.log" )
-        self.process.stdout_logfile_maxbytes = "50MB"
-        self.process.stdout_logfile_backups  = "10"
-        self.process.save()
+        process.command                 = "%s -n %s -v" % ( join(kvmdir, "monitord.py"), self.name )
+        process.directory               = join( "/guests" )
+        process.autostart               = "false"
+        process.redirect_stderr         = "true"
+        process.stdout_logfile          = join( "/var/log/guests", ("machine_%s.log" % self.name) )
+        process.stdout_logfile_maxbytes = "50MB"
+        process.stdout_logfile_backups  = "10"
+        process.save()
+
+        if self.process is None:
+            self.process = process
 
         if not self.uuid:
             uu = uuid.uuid4()
