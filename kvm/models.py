@@ -75,7 +75,7 @@ class VirtualMachine(models.Model):
     diskformat  = models.CharField(max_length=20,  default="qcow2")
     disksize    = models.CharField(max_length=10,  default="10G", help_text="only used when creating the image")
     cdrompath   = models.CharField(max_length=250, blank=True)
-    vncport     = models.IntegerField(default=0,   unique=True)
+    vncport     = models.IntegerField(default=-1,  unique=True)
     keymap      = models.CharField(max_length=10,  default="de")
     runsnapshot = models.BooleanField(default=False, blank=True)
     emumachine  = models.CharField(max_length=50,  blank=True, default="pc-0.12")
@@ -134,6 +134,9 @@ class VirtualMachine(models.Model):
             process = Process(supervisor=svd, name=self.name)
         else:
             process = self.process
+
+        if self.vncport == -1:
+            self.vncport = max( [ rec['vncport'] for rec in VirtualMachine.objects.values('vncport') ] ) + 1
 
         kvmdir = dirname(abspath(__file__))
         process.command                 = "%s -n %s -v" % ( join(kvmdir, "monitord.py"), self.name )
