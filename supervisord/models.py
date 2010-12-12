@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 # kate: space-indent on; indent-width 4; replace-tabs on;
 
+import xmlrpclib
+import os
 from os.path import join
 from functools import partial
 from time import time, sleep
-import xmlrpclib
 from ConfigParser import ConfigParser
 
-from django.db import models
+from django.db        import models
+from django.db.models import signals
 
 
 def mk_config_property( field, doc="", get_coerce=None, get_none=None, set_coerce=unicode, set_none='' ):
@@ -27,6 +29,8 @@ class Supervisor(models.Model):
     username    = models.CharField(max_length=250, blank=True)
     password    = models.CharField(max_length=250, blank=True)
     confdir     = models.CharField(max_length=250)
+
+    Fault       = xmlrpclib.Fault
 
     def __init__(self, *args, **kwargs):
         models.Model.__init__(self, *args, **kwargs)
@@ -62,14 +66,18 @@ class Process(models.Model):
     stdout_logfile_maxbytes = mk_config_property( "stdout_logfile_maxbytes", "The max size of the logfile" )
     stdout_logfile_backups  = mk_config_property( "stdout_logfile_backups", "How many backups to keep" )
 
+    Fault = xmlrpclib.Fault
+
     def __init__(self, *args, **kwargs):
         models.Model.__init__(self, *args, **kwargs)
 
-        self._confpath = ""
         self._conf = ConfigParser()
         if self.id is not None and self.name:
-            self._confpath = join(self.supervisor.confdir, self.name + ".conf")
-            self._conf.read(self._confpath)
+            self._conf.read(self.confpath)
+
+    @property
+    def confpath(self):
+        return join(self.supervisor.confdir, self.name + ".conf")
 
     def getconf(self, option):
         return self._conf.get( ("program:" + self.name), option )
@@ -83,11 +91,10 @@ class Process(models.Model):
         return "%s on Supervisor at %s" % (self.name, self.supervisor.address)
 
     def save(self, *args, **kwargs):
-        self._confpath = join(self.supervisor.confdir, self.name + ".conf")
         adding = (self.id is None)
         ret = models.Model.save(self, *args, **kwargs)
 
-        fd = open(self._confpath, "w")
+        fd = open(self.confpath, "w")
         try:
             self._conf.write(fd)
         finally:
@@ -98,6 +105,19 @@ class Process(models.Model):
             self.supervisor.xmlrpc.supervisor.addProcessGroup(self.name)
 
         return ret
+
+    # Deletion handler
+    def pre_delete( self ):
+        """ Delete this process from Supervisord. """
+        if self.is_running:
+            self.stop()
+        self.supervisor.xmlrpc.supervisor.removeProcessGroup(self.name)
+        os.unlink(self.confpath)
+        self.supervisor.xmlrpc.supervisor.reloadConfig()
+
+    @staticmethod
+    def pre_delete_listener( **kwargs ):
+        kwargs['instance'].pre_delete()
 
     def start(self):
         return self.supervisor.xmlrpc.supervisor.startProcess(self.name)
@@ -111,6 +131,8 @@ class Process(models.Model):
     def getInfo(self):
         return self.supervisor.xmlrpc.supervisor.getProcessInfo(self.name)
 
+    info = property(getInfo)
+
     def waitState(self, state="RUNNING", interval=0.5, maxwait=10):
         start = int(time())
         while self.info["statename"] != state:
@@ -119,8 +141,9 @@ class Process(models.Model):
             sleep(interval)
         return True
 
-    info = property(getInfo)
-
     @property
     def is_running(self):
         return self.info['statename'] == 'RUNNING'
+
+
+signals.pre_delete.connect( Process.pre_delete_listener, sender=Process )

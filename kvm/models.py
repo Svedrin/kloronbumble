@@ -3,7 +3,10 @@
 
 import uuid
 from os.path import dirname, abspath, join
-from django.db import models
+
+from django.db        import models
+from django.db.models import signals
+
 from supervisord.models import Supervisor, Process
 
 class Bridge(models.Model):
@@ -46,6 +49,15 @@ class Bridge(models.Model):
             self.process = process
 
         return models.Model.save(self, *args, **kwargs)
+
+    # Deletion handler
+    def post_delete( self ):
+        """ Delete the according process. """
+        self.process.delete()
+
+    @staticmethod
+    def post_delete_listener( **kwargs ):
+        kwargs['instance'].post_delete()
 
     def start(self):
         return self.process.start()
@@ -170,6 +182,15 @@ class VirtualMachine(models.Model):
 
         return models.Model.save(self, *args, **kwargs)
 
+    # Deletion handler
+    def post_delete( self ):
+        """ Delete the according process. """
+        self.process.delete()
+
+    @staticmethod
+    def post_delete_listener( **kwargs ):
+        kwargs['instance'].post_delete()
+
     def start(self):
         if self.bridge is not None and not self.bridge.process.is_running:
             self.bridge.start()
@@ -214,3 +235,7 @@ class Snapshot(models.Model):
         if not self.id:
             raise SystemError("Cannot load a snapshot that has not yet been created")
         return self.vm.process.sendStdin("loadvm %s\n" % self.tag.encode("utf-8"))
+
+
+signals.post_delete.connect( Bridge.post_delete_listener,         sender=Bridge         )
+signals.post_delete.connect( VirtualMachine.post_delete_listener, sender=VirtualMachine )
