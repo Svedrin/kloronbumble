@@ -26,5 +26,8 @@ try:
 except VirtualMachine.DoesNotExist:
     print "No VM found with MAC Address", macaddr
 else:
-    vm.ip4address = ipaddr
+    if action == "del":
+        vm.ip4address = ""
+    else:
+        vm.ip4address = ipaddr
     vm.save()
