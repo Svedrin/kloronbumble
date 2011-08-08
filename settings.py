@@ -15,7 +15,7 @@ DATABASES = {
         'NAME': 'vmanager',                      # Or path to database file if using sqlite3.
         'USER': 'vmanager',                      # Not used with sqlite3.
         'PASSWORD': 'vm4n4g3r',                  # Not used with sqlite3.
-        'HOST': '',                      # Set to empty string for localhost. Not used with sqlite3.
+        'HOST': '127.0.0.1',                      # Set to empty string for localhost. Not used with sqlite3.
         'PORT': '',                      # Set to empty string for default. Not used with sqlite3.
     }
 }
@@ -55,7 +55,7 @@ MEDIA_URL = ''
 # URL prefix for admin media -- CSS, JavaScript and images. Make sure to use a
 # trailing slash.
 # Examples: "http://foo.com/media/", "/media/".
-ADMIN_MEDIA_PREFIX = '/media/'
+ADMIN_MEDIA_PREFIX = '/vm/media/'
 
 # Make this unique, and don't share it with anybody.
 SECRET_KEY = 'jw5t##@@e7-^hmq-d7tn(@t0&cl=+enpk5#+5&4f+kj6d0c(6r'
@@ -75,7 +75,7 @@ MIDDLEWARE_CLASSES = (
     'django.contrib.messages.middleware.MessageMiddleware',
 )
 
-ROOT_URLCONF = 'vmanager.urls'
+ROOT_URLCONF = 'urls'
 
 TEMPLATE_DIRS = (
     # Put strings here, like "/home/html/django_templates" or "C:/www/django/templates".
