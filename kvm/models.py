@@ -132,7 +132,11 @@ class VirtualMachine(models.Model):
 
         if self.vncport is not None:
             args.extend(["-usbdevice", "tablet"])
-            args.extend(["-vnc", "127.0.0.1:%d" % self.vncport])
+            if self.bridge:
+                vncip = self.bridge.ip4address
+            else:
+                vncip = "127.0.0.1"
+            args.extend(["-vnc", "%s:%d" % (vncip, self.vncport)])
             args.extend(["-k", self.keymap.encode("utf-8")])
 
         if self.runsnapshot:
