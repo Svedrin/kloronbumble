@@ -84,6 +84,7 @@ def invoke(args):
 if not exists(join( "/sys/class/net", br.name )):
     invoke(["brctl", "addbr", br.name])
     invoke(["ifconfig", br.name, br.ip4address, "netmask", br.netmask])
+    invoke(["ip", "-6", "addr", "add", br.ip6address, "dev", br.name])
     selfstarted = True
 else:
     selfstarted = False
