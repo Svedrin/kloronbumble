@@ -53,8 +53,8 @@ def invoke(args):
 
 
 if vm.bridge is not None:
-    invoke(["/sbin/ifconfig", progargs[0], "up"])
-    invoke(["/sbin/brctl", "addif", vm.bridge.name, progargs[0]])
+    invoke(["ifconfig", progargs[0], "up"])
+    invoke(["brctl", "addif", vm.bridge.name, progargs[0]])
 
 else:
     invoke(["/sbin/ifconfig", progargs[0], "up"])
