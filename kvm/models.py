@@ -127,7 +127,10 @@ class VirtualMachine(models.Model):
 
         kvmdir = dirname(abspath(__file__))
 
-        args.extend(["-net", "nic,vlan=0,macaddr=%s" % self.macaddress.encode("utf-8")])
+        args.extend(["-net", "nic,vlan=0,macaddr=%s,model=%s" % (
+            self.macaddress.encode("utf-8"),
+            {True: 'virtio', False: 'rtl8139'}[self.paravirt]
+            )])
         args.extend(["-net", "tap,vlan=0,script=%s" % join(kvmdir, "netconf.py")])
 
         if self.vncport is not None:
