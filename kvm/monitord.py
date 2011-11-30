@@ -81,7 +81,7 @@ if not vm.diskpath or not exists(vm.diskpath):
     diskpath = "/guests/%s/hda.%s" % (vm.name.encode("utf-8"), vm.diskformat.encode("utf-8"))
     if options.verbose:
         print "Creating %s image at '%s'..." % ( vm.diskformat, diskpath );
-    invoke(["qemu-img", "create", "-f", vm.diskformat, "-o", "size=10G,preallocation=metadata", diskpath])
+    invoke(["qemu-img", "create", "-f", vm.diskformat, "-o", ("size=%s,preallocation=metadata" % vm.disksize), diskpath])
 
     if options.verbose:
         print "Done."
