@@ -90,7 +90,7 @@ class VirtualMachine(models.Model):
     vncport     = models.IntegerField(default=-1,  unique=True)
     keymap      = models.CharField(max_length=10,  default="de")
     runsnapshot = models.BooleanField(default=False, blank=True)
-    emumachine  = models.CharField(max_length=50,  blank=True, default="pc-0.12")
+    emumachine  = models.CharField(max_length=50,  blank=True, default="pc")
     paravirt    = models.BooleanField(default=True, blank=True)
 
     def __unicode__(self):
