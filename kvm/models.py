@@ -69,7 +69,9 @@ class Bridge(models.Model):
 
     @property
     def idle(self):
-        return not max(( vm.process.is_running for vm in self.virtualmachine_set.all()))
+        if self.virtualmachine_set.count():
+            return not max(( vm.process.is_running for vm in self.virtualmachine_set.all()))
+        return True
 
 
 class VirtualMachine(models.Model):
