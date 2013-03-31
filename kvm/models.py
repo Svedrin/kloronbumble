@@ -155,7 +155,10 @@ class VirtualMachine(models.Model):
             process = self.process
 
         if self.vncport == -1:
-            self.vncport = max( [ rec['vncport'] for rec in VirtualMachine.objects.values('vncport') ] ) + 1
+            try:
+                self.vncport = max( [ rec['vncport'] for rec in VirtualMachine.objects.values('vncport') ] ) + 1
+            except ValueError:
+                self.vncport = 0
 
         kvmdir = dirname(abspath(__file__))
         process.command                 = "%s -n %s -v" % ( join(kvmdir, "monitord.py"), self.name )
