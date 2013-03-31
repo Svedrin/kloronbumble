@@ -59,3 +59,5 @@ if vm.bridge is not None:
 else:
     invoke(["/sbin/ifconfig", progargs[0], "up"])
     invoke(["/sbin/route", "add", "-host", vm.ip4address, "dev", progargs[0]])
+    if vm.ip6address:
+        invoke(["ip", "address", "add", vm.ip6address, "dev", progargs[0]])
