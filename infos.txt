@@ -1,0 +1,172 @@
+/usr/bin/kvm -M pc-0.12 -enable-kvm -m 512 -smp 2,sockets=2,cores=1,threads=1 -name snaptest -uuid a1ef030f-60dd-c7f4-b3bf-2cb300b5d131 \
+	-monitor stdio -rtc base=utc -nodefaults \
+	# Bei Installation:
+	-boot order=dc,once=d \
+	-drive file=/guests/snaptest/hda.qcow2,if=virtio,id=drive-virtio-disk0,boot=on,format=qcow2 \
+	-cdrom /media/daten/Betriebssysteme/Debian/debian-506-i386-netinst.iso \
+	# Normales Booten:
+	-boot order=c \
+	-drive file=/guests/snaptest/hda.qcow2,if=virtio,id=drive-virtio-disk0,boot=on,format=qcow2 \
+	# endif ;)
+	-net nic,vlan=0,macaddr=52:54:00:d6:b2:bb \
+	-net tap,vlan=0,script=/guests/snaptest/ifup \
+	-usbdevice tablet -vnc 127.0.0.1:1 -k de -vga cirrus -snapshot
+
+* once=d gilt nur solange der Prozess läuft, beim nächsten Start gilt das wieder
+* also: nur angeben bei Neuinstallation :)
+* ifup-script kriegt tapdev als ersten Parameter ($1)
+
+UUID erzeugen mit Python:
+-------------------------
+
+http://docs.python.org/library/uuid.html#uuid.uuid4
+
+In [1]: import uuid
+In [2]: uuid.uuid4()
+Out[2]: UUID('e415947c-bd6a-4f68-a439-6612c734fcc3')
+In [3]: unicode(_2)
+Out[3]: u'e415947c-bd6a-4f68-a439-6612c734fcc3'
+
+DHCP per dnsmasq:
+-----------------
+dnsmasq \
+	--strict-order \                  # DNS: genau an /etc/resolv.conf halten, nicht denken
+	--bind-interfaces \               # Nur auf dem Iface binden das untige IP hat
+	--keep-in-foreground \            # für supervd
+	[--no-dhcp-interface=virbr0] \    # auf diesem Iface kein DHCP machen, nur DNS
+	--conf-file= \                    # defaults nutzen? ka
+	--listen-address 192.168.123.1 \  # IP der bridge auf die gebunden werden soll
+	--except-interface lo             # nie auf lo binden
+
+* listen-address ist wohl robuster: egal was es für ein iface ist (auch eth0:1), bind klappt richtig
+* except-interface lo wird zwar nicht gebraucht aber steht wohl sicherheitshalber drin
+
+Commit:
+-------
+
+(qemu) commit
+commit: block device name expected
+(qemu) info block
+drive-virtio-disk0: type=hd removable=0 file=/tmp/vl.tFRHlQ backing_file=/guests/snaptest/hda.qcow2 ro=0 drv=qcow2 encrypted=0
+ide1-cd0: type=cdrom removable=1 locked=0 [not inserted]
+(qemu) commit drive-virtio-disk0
+(qemu)
+
+=> Gibt nichts aus, aber dauert ewig und in der Zeit hängt die VM
+=> Achtung: Keinerlei Rückmeldung, also sicherstellen dass die ID stimmt! ;)
+   (qemu) commit frnzknarz
+   (qemu)
+
+
+Snapshot-Liste:
+---------------
+
+(qemu) info snapshots
+Snapshot devices: drive-virtio-disk0
+Snapshot list (from drive-virtio-disk0):
+ID        TAG                 VM SIZE                DATE       VM CLOCK
+(qemu) help savevm
+savevm [tag|id] -- save a VM snapshot. If no tag or id are provided, a new snapshot is created
+(qemu) savevm freshinstall
+(qemu) info snapshots
+Snapshot devices: drive-virtio-disk0
+Snapshot list (from drive-virtio-disk0):
+ID        TAG                 VM SIZE                DATE       VM CLOCK
+1         freshinstall           503M 2010-11-01 10:01:23   00:45:56.624
+(qemu) loadvm freshinstall
+(qemu)
+
+=> Snapshot-Erstellung ähnlich wie commit
+=> Load: VM hängt halt 'ne weile, danach sieht alles genau aus wie an dem moment wo snapshot geschossen
+         Aber: Reboot ist zu empfehlen ;)
+
+Ideen
+-----
+
+* Wrapper-Programm um die VM, das sich um die richtigen Parameter kümmert und stdio umleitet
+* Dazu: KVM als subprozess mit entspr. Pipes spawnen
+* KVM-Monitor der Befehle bereitstellt
+* RPC-Mechanismus? DBus?
+* Befehle: absetzen, dann solange input fressen bis (qemu) kommt, dann parse + return
+  - wie bei Befehlen wie commit, savevm, loadvm die ewig dauern und nichts returnen?
+  - Monitord weiß welche Befehle sucken, handled diese dann async
+  - Status in Django melden von wegen "beschäftigt" oder so
+* Relevante Möglichkeiten bei Network:
+
+  - in bridge adden:
+     | ifconfig $1 promisc up
+     | brctl addif virbr0 $1
+    -> relevant bei bridging, host-only, routing
+    -> sicherstellen dass bridge lebt
+    -> bridging:
+       eth0 muss mit drin sein - ist das mein Problem? (option "make sure x is in br0"?)
+    -> host-only:
+       eth0 darf nicht mit drin sein - siehe oben, "make sure x is NOT in br0"
+       dnsmasq muss laufen
+       nat muss in iptables geconft sein
+    -> routen mit bridge:
+       braucht IP auf der Bridge, route macht ifconfig weil direct connected
+    -> Problem: eth0 adden/removen wär etwas fail, weil Kiste dann down
+       => also nur flamen wenns nicht passt
+
+  - routen ohne bridge:
+     | ifconfig $1 0.0.0.0 up
+     | route add -host 188.40.52.245 dev $1
+    -> relevant für Hetzners normales setup
+    -> Host braucht keine bridge und keine IP auf dem tapdev
+
+* Also Netzwerk-relevante Models:
+  - VM:
+    * IP-Adresse (wird bei dhcp automatisch eingetragen)
+    * MAC-Adresse
+    * Bridge: ForeignKey( null=True )
+  - NetworkBridge:
+    * Name (virbr0)
+    * CommonName (Menschenlesbare Beschreibung oder sowas)
+    * IP-Adresse
+    * Subnet Mask
+    * NeedIfaces: Fail wenn nicht drin
+    * FailIfaces: Fail wenn drin
+    * dnsmasq mode: off, dns only, dns+dhcp
+
+* Tools:
+  - Bridgebuilder
+    * Checken ob br-dev existiert, wenn nicht anlegen
+    * IP-Adresse setzen (jede bridge braucht eine, interne halt 192.168.123.1)
+    * Online-Status an Django melden
+    * subprocess.popen(dnsmasq)
+    * dbus-Signals binden: DhcpLeaseAdded/Deleted/Updated
+      http://www.thekelleys.org.uk/dnsmasq/docs/DBus-interface
+      dann IP-Feld von VM mit genannter Mac-Adresse updaten
+
+  - Machinebuilder
+    * Checken ob bridge lebt (if any)
+    * KVM-Kommandozeile bauen, Subprozess erzeugen
+    * Online-Status an Django melden
+
+  - Netscript:
+    * wenn bridge: brctl addif $bridgedev $1
+    * sonst:       route add -host $hostip dev $1
+
+
+Snapshots aus qemu-Prozess auslesen
+-----------------------------------
+
+In [3]: vm = VirtualMachine.objects.get(name="karuru")
+
+In [5]: logf = open("/guests/karuru/stdout.log")
+
+In [7]: logf.seek(0, os.SEEK_END)
+
+In [8]: vm.process.sendStdin("info snapshots\n")
+Out[8]: True
+
+In [9]: print(logf.read())
+info snapshots
+Snapshot devices: drive-disk0
+Snapshot list (from drive-disk0):
+ID        TAG                 VM SIZE                DATE       VM CLOCK
+1         10_11_10-zimbra-md-znc   1.0G 2010-11-10 20:01:27   01:11:39.516
+(qemu)
+
+In [10]: logf.close()
