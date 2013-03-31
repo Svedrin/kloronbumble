@@ -11,8 +11,8 @@ MANAGERS = ADMINS
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql_psycopg2',
-        'NAME': 'vmanager',                      # Or path to database file if using sqlite3.
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': '/srv/kloronbumble/db.db3',                      # Or path to database file if using sqlite3.
         'USER': 'vmanager',                      # Not used with sqlite3.
         'PASSWORD': 'vm4n4g3r',                  # Not used with sqlite3.
         'HOST': '127.0.0.1',                      # Set to empty string for localhost. Not used with sqlite3.
