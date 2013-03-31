@@ -3,3 +3,4 @@ syntax:glob
 *.pyc
 *~
 supervd.conf.d/*.conf
+db.db3
